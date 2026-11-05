@@ -39,7 +39,7 @@ Cities are a required `enum` (country + city), and their centre coordinates live
 ## Requirements and installation
 
 - PHP 8.1 or later, with the `intl` and `mbstring` extensions
-- Laravel is optional: versions 10, 11, 12 and 13 are supported and tested
+- Laravel is optional: versions 12 and 13 are supported and tested. Laravel 10 and 11 are end-of-life and Composer now blocks them over unpatched security advisories.
 
 ```bash
 composer require ihsan/umm-alqura-prayer-times
@@ -252,7 +252,7 @@ The remaining differences are mostly times that fall within a few seconds of a m
 composer install && composer test
 ```
 
-The tests compare the package with the official 2026 Umm al-Qura tables for nine cities, stored in `tests/fixtures/official`. CI runs them on PHP 8.1 to 8.4, without Laravel and with Laravel 10, 11, 12 and 13.
+The tests compare the package with the official 2026 Umm al-Qura tables for nine cities, stored in `tests/fixtures/official`. CI runs them on PHP 8.1 to 8.4, without Laravel and with Laravel 12 and 13.
 
 ## License
 

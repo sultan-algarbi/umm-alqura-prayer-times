@@ -3,7 +3,18 @@
     "description": "Offline PHP & Laravel library for Islamic prayer (adhan) times using the official Umm al-Qura method, calibrated against the official calendar, with automatic Ramadan Isha and built-in Saudi cities.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["prayer-times", "adhan", "umm-al-qura", "islamic", "muslim", "salah", "hijri", "saudi-arabia", "offline", "laravel"],
+    "keywords": [
+        "prayer-times",
+        "adhan",
+        "umm-al-qura",
+        "islamic",
+        "muslim",
+        "salah",
+        "hijri",
+        "saudi-arabia",
+        "offline",
+        "laravel"
+    ],
     "homepage": "https://github.com/sultan-algarbi/umm-alqura-prayer-times",
     "support": {
         "issues": "https://github.com/sultan-algarbi/umm-alqura-prayer-times/issues",
@@ -15,17 +26,19 @@
         "ext-mbstring": "*"
     },
     "require-dev": {
-        "orchestra/testbench": "^8.0 || ^9.0 || ^10.0 || ^11.0",
+        "orchestra/testbench": "^10.0 || ^11.0",
         "phpunit/phpunit": "^10.5 || ^11.0 || ^12.0"
     },
     "suggest": {
-        "illuminate/support": "Laravel 10–13: auto-discovered service provider and publishable cities config"
+        "illuminate/support": "Laravel 12 or 13: auto-discovered service provider and publishable cities config"
     },
     "autoload": {
         "psr-4": {
             "Ihsan\\UmmAlQuraPrayerTimes\\": "src/"
         },
-        "files": ["src/helpers.php"]
+        "files": [
+            "src/helpers.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {
