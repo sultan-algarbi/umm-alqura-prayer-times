@@ -1,131 +1,203 @@
-# أوقات الصلاة بتقويم أم القرى — PHP
+# Umm al-Qura Prayer Times — PHP & Laravel
 
 [![Tests](https://github.com/sultan-algarbi/umm-alqura-prayer-times/actions/workflows/tests.yml/badge.svg)](https://github.com/sultan-algarbi/umm-alqura-prayer-times/actions/workflows/tests.yml)
+[![Packagist](https://img.shields.io/packagist/v/ihsan/umm-alqura-prayer-times)](https://packagist.org/packages/ihsan/umm-alqura-prayer-times)
 
-حزمة PHP تحسب أوقات الأذان بطريقة **أم القرى** الرسمية، وتعمل **دون إنترنت** بالكامل.
-المدن معرّفة في `enum` إلزامي (الدولة + المدينة)، وإحداثيات مراكزها في ملف config قابل للتعديل.
+English | **[العربية](README.ar.md)**
 
-**مُعايَرة على التقويم الرسمي:** تطابق الحزمة جداول [تقويم أم القرى الرسمي](https://www.ummulqura.org.sa) حتى الدقيقة في **97.9%** من الأوقات، ولا يتجاوز الفرق دقيقة واحدة في أي وقت آخر، مع تطابق **كل** التواريخ الهجرية (انظر [الدقة](#الدقة)).
+Islamic prayer (adhan) times using the official **Umm al-Qura** method, computed **fully offline**. Works in any PHP project, with ready-made **Laravel** integration.
+Cities are a required `enum` (country + city), and their centre coordinates live in an editable config file.
 
-## طريقة الحساب
+**Calibrated against the official calendar:** the package matches the [official Umm al-Qura Calendar](https://www.ummulqura.org.sa) to the minute for **97.9%** of times, is never more than one minute apart otherwise, and matches **every** Hijri date (see [Accuracy](#accuracy)).
 
-| الوقت | القاعدة |
+## Contents
+
+- [Calculation method](#calculation-method)
+- [Requirements and installation](#requirements-and-installation)
+- [Usage in PHP](#usage-in-php)
+- [Usage in Laravel](#usage-in-laravel)
+- [Configuration](#configuration-configcitiesphp)
+- [Accuracy](#accuracy)
+
+## Calculation method
+
+| Time | Rule |
 |---|---|
-| الفجر | الشمس تحت الأفق بزاوية 18.5° |
-| الشروق | ظهور حافة الشمس العليا (مع الانكسار الجوي) |
-| الظهر | زوال الشمس |
-| العصر | ظل الشيء مثله + ظل الزوال (الجمهور) |
-| المغرب | غروب الشمس |
-| العشاء | بعد المغرب بـ 90 دقيقة، و **120 دقيقة في رمضان تلقائيًا** |
+| Fajr | Sun 18.5° below the horizon |
+| Sunrise | Upper limb of the sun at the horizon (refraction included) |
+| Dhuhr | Solar transit |
+| Asr | Shadow = object height + noon shadow (standard) |
+| Maghrib | Sunset |
+| Isha | 90 minutes after Maghrib, **120 minutes in Ramadan, automatically** |
 
-- موقع الشمس من معادلات Jean Meeus *Astronomical Algorithms*، ويُؤخذ لكل صلاة في اللحظة التي يعتمدها التقويم الرسمي من اليوم.
-- **التقريب كالجداول الرسمية:** أوقات الصلوات تُقرَّب **للأعلى** إلى الدقيقة، فلا يُعلَن أذان قبل وقته، والشروق يُقرَّب **للأسفل**، فلا يتأخر عن آخر وقت الفجر.
-- إحداثيات المدن هي نفسها التي يستخدمها التقويم الرسمي.
-- رمضان يُحدَّد تلقائيًا من تقويم أم القرى الهجري.
-- الأوقات بتوقيت دولة المدينة، ولا توجد إزاحات يدوية: الناتج هو وقت الأذان حسب مركز المدينة.
+- Sun position from Jean Meeus, *Astronomical Algorithms*, sampled for each prayer at the point of the day the official calendar uses.
+- **Rounding as in the official tables:** prayer times are rounded **up** to the minute, so an adhan is never announced early, and sunrise is rounded **down**, so it never shows the end of Fajr late.
+- City coordinates are the same ones the official calendar uses.
+- Ramadan is detected automatically from the Umm al-Qura Hijri calendar.
+- Times are in the city's country timezone, with no manual offsets: the result is the adhan time at the city centre.
 
-## المتطلبات
+## Requirements and installation
 
-PHP 8.1 أو أحدث، مع امتدادي `intl` و `mbstring`.
-
-## التثبيت
+- PHP 8.1 or later, with the `intl` and `mbstring` extensions
+- Laravel is optional: versions 10, 11, 12 and 13 are supported and tested
 
 ```bash
 composer require ihsan/umm-alqura-prayer-times
 ```
 
-أو انسخ المجلد إلى مشروعك وأضف في `composer.json`:
+## Usage in PHP
 
-```json
-"repositories": [{ "type": "path", "url": "./packages/umm-alqura-prayer-times" }]
-```
+### Cities: country + city
 
-## المدن: الدولة + المدينة
-
-كل مدينة حالة في `City` enum، اسمها `{كود الدولة}_{المدينة}` وقيمتها `{الدولة}.{المدينة}`:
+Each city is a case of the `City` enum, named `{COUNTRY}_{City}` with the value `{country}.{city}`:
 
 ```php
 use Ihsan\UmmAlQuraPrayerTimes\City;
 use Ihsan\UmmAlQuraPrayerTimes\Country;
 
-City::SA_Riyadh->value;          // 'sa.riyadh'  ← ثابتة، آمنة للتخزين في قاعدة البيانات
+City::SA_Riyadh->value;          // 'sa.riyadh'  ← stable, safe to store in a database
 City::SA_Riyadh->country();      // Country::SA
-City::SA_Riyadh->nameAr();       // 'الرياض'
-City::SA_Riyadh->fullNameAr();   // 'السعودية - الرياض'
+City::SA_Riyadh->nameEn();       // 'Riyadh'
 City::SA_Riyadh->fullNameEn();   // 'Saudi Arabia - Riyadh'
+City::SA_Riyadh->fullNameAr();   // 'السعودية - الرياض'
 
-// من قيمة قادمة من نموذج أو طلب HTTP
-City::from($request->city);      // يرمي خطأ إن لم تكن مدينة معرّفة
-City::tryFrom($request->city);   // يعيد null
+// From a form or HTTP request value
+City::from($value);      // throws for an unknown city
+City::tryFrom($value);   // returns null
 
-// لقوائم الاختيار
-City::options();                       // ['sa.riyadh' => 'السعودية - الرياض', ...]
-City::options('ar', withCountry: false); // ['sa.riyadh' => 'الرياض', ...]
-City::options('en', country: Country::SA);
-Country::SA->cities();                 // كل مدن السعودية
+// For dropdowns
+City::options('en');                     // ['sa.riyadh' => 'Saudi Arabia - Riyadh', ...]
+City::options('en', withCountry: false); // ['sa.riyadh' => 'Riyadh', ...]
+City::options('ar', country: Country::SA);
+Country::SA->cities();                   // every Saudi city
 ```
 
-## استخراج الأوقات حسب التاريخ
+### Prayer times by date
 
 ```php
 use Ihsan\UmmAlQuraPrayerTimes\PrayerTimes;
 
-// يوم ميلادي محدد (أو null لليوم الحالي بتوقيت المدينة)
+// A Gregorian date (or null for today in the city's timezone)
 $t = PrayerTimes::on(City::SA_Riyadh, '2026-11-05');
-$t = prayer_times(City::SA_Riyadh, '2026-11-05');   // دالة مختصرة
+$t = prayer_times(City::SA_Riyadh, '2026-11-05');   // helper function
 
-$t->fajr->format('H:i');   // DateTimeImmutable بتوقيت المدينة
+$t->fajr->format('H:i');   // DateTimeImmutable in the city's timezone
 $t->toArray();
 // ['fajr' => '04:44', 'sunrise' => '06:02', 'dhuhr' => '11:37',
 //  'asr' => '14:48', 'maghrib' => '17:11', 'isha' => '18:41']
 $t->hijri;       // ['year' => 1448, 'month' => 5, 'day' => 25]
 $t->isRamadan;   // false
 
-// يوم هجري
+// A Hijri date
 $t = PrayerTimes::onHijri(City::SA_Makkah, 1448, 9, 1);
 
-// نطاق تواريخ (مصفوفة مفاتيحها Y-m-d)
+// A date range (array keyed by Y-m-d)
 PrayerTimes::between(City::SA_Jeddah, '2026-12-01', '2026-12-31');
 
-// شهر ميلادي كامل
+// A whole Gregorian month
 PrayerTimes::month(City::SA_Madinah, 2026, 12);
 
-// شهر هجري كامل — مثلًا إمساكية رمضان
+// A whole Hijri month — e.g. a Ramadan timetable
 foreach (PrayerTimes::hijriMonth(City::SA_Riyadh, 1448, 9) as $date => $day) {
-    echo "{$day->hijri['day']} رمضان ($date): " . implode(' ', $day->toArray()) . PHP_EOL;
+    echo "Ramadan {$day->hijri['day']} ($date): " . implode(' ', $day->toArray()) . PHP_EOL;
 }
 
-// الأذان القادم (ينتقل لفجر الغد بعد العشاء)
+// The next adhan (rolls over to tomorrow's Fajr after Isha)
 ['prayer' => $p, 'time' => $time] = PrayerTimes::nextAdhan(City::SA_Makkah);
-echo $p->arabicName() . ' ' . $time->format('H:i');
+echo $p->name . ' ' . $time->format('H:i');   // or $p->arabicName()
 
-// الصلاة الحالية والقادمة ضمن يوم
+// Current and next prayer within a day
 $t->currentPrayer();   // Prayer|null
 $t->nextPrayer();      // Prayer|null
 ```
 
-التاريخ النصي يجب أن يكون `Y-m-d` وتاريخًا صحيحًا، وإلا يُرمى `InvalidArgumentException`.
-وإن مرّرت كائن تاريخ بمنطقة زمنية أخرى، يؤخذ اليوم كما هو في توقيت المدينة.
+A date string must be a valid `Y-m-d` date, otherwise an `InvalidArgumentException` is thrown.
+A date object in another timezone is read as the calendar day in the city's timezone.
 
-## ملف الإعدادات `config/cities.php`
+## Usage in Laravel
 
-مستويان فقط: **الدولة ← المدن**.
+The service provider is registered automatically through package discovery.
+
+### Publish the config (optional)
+
+```bash
+php artisan vendor:publish --tag=prayer-times-config
+```
+
+This creates `config/prayer-cities.php`. Edit any city centre there and it is applied when the application boots. It works with `php artisan config:cache`.
+
+### Validating a city in a request
+
+```php
+use Illuminate\Validation\Rule;
+use Ihsan\UmmAlQuraPrayerTimes\City;
+
+$request->validate([
+    'city' => ['required', Rule::enum(City::class)],
+    'date' => ['nullable', 'date_format:Y-m-d'],
+]);
+```
+
+### Storing the city with Eloquent
+
+```php
+use Ihsan\UmmAlQuraPrayerTimes\City;
+
+protected function casts(): array
+{
+    return ['city' => City::class];   // stored as 'sa.riyadh', read as City::SA_Riyadh
+}
+```
+
+### Controller
+
+```php
+use Ihsan\UmmAlQuraPrayerTimes\City;
+use Ihsan\UmmAlQuraPrayerTimes\PrayerTimes;
+
+public function show(Request $request)
+{
+    $times = PrayerTimes::on(City::from($request->city), $request->date);
+
+    return response()->json([
+        'city'  => $times->city->fullNameEn(),
+        'hijri' => $times->hijri,
+        'times' => $times->toArray(),
+    ]);
+}
+```
+
+### City dropdown in Blade
+
+```blade
+<select name="city">
+    @foreach (\Ihsan\UmmAlQuraPrayerTimes\City::options('en') as $value => $label)
+        <option value="{{ $value }}" @selected(old('city') === $value)>{{ $label }}</option>
+    @endforeach
+</select>
+```
+
+## Configuration (`config/cities.php`)
+
+Two levels only: **country → cities**.
 
 ```php
 return [
     'SA' => [
-        'riyadh' => ['name_ar' => 'الرياض', 'name_en' => 'Riyadh', 'latitude' => 24.7136, 'longitude' => 46.6753],
-        'jeddah' => ['name_ar' => 'جدة',    'name_en' => 'Jeddah', 'latitude' => 21.4858, 'longitude' => 39.1925],
+        'riyadh' => ['name_ar' => 'الرياض', 'name_en' => 'Riyadh', 'latitude' => 24.67, 'longitude' => 46.69],
+        'jeddah' => ['name_ar' => 'جدة',    'name_en' => 'Jeddah', 'latitude' => 21.5,  'longitude' => 39.17],
         // ...
     ],
 ];
 ```
 
-اسم الدولة وتوقيتها معرّفان في `Country` enum.
+The country's name and timezone are defined in the `Country` enum.
 
-### تعديل مركز مدينة دون لمس ملف الحزمة
+### Changing a city centre without editing the package
 
-أنشئ ملفًا في مشروعك يحتوي **ما تريد تعديله فقط**، ثم حمّله مرة واحدة عند بدء التطبيق:
+**In Laravel:** publish the config as above and edit it.
+
+**In plain PHP:** create a file with **only what you want to change**, and load it once at startup:
 
 ```php
 // config/prayer-cities.php
@@ -140,48 +212,48 @@ return [
 use Ihsan\UmmAlQuraPrayerTimes\CityConfig;
 
 CityConfig::load(__DIR__ . '/config/prayer-cities.php');
-// أو مباشرة من مصفوفة:
+// or directly from an array:
 CityConfig::set(['SA' => ['riyadh' => ['latitude' => 24.6877, 'longitude' => 46.7219]]]);
 ```
 
-يُدمج ملفك فوق الإعدادات الافتراضية، فالحقول والمدن التي لا تذكرها تبقى كما هي.
-ويُرفض أي مفتاح غير معروف، أو مدينة غير موجودة في الـ enum، أو إحداثيات خارج النطاق.
+Your values are merged over the defaults, so fields and cities you leave out stay as they are.
+Unknown keys, cities that aren't in the enum, and out-of-range coordinates are rejected.
 
-### إضافة مدينة
+### Adding a city
 
-1. أضف حالة في `src/City.php`، مثل: `case SA_Afif = 'sa.afif';`
-2. أضف بياناتها في `config/cities.php` تحت `'SA'`:
-   `'afif' => ['name_ar' => 'عفيف', 'name_en' => 'Afif', 'latitude' => 23.9065, 'longitude' => 42.9172],`
+1. Add a case to `src/City.php`, e.g. `case SA_Afif = 'sa.afif';`
+2. Add its data to `config/cities.php` under `'SA'`:
+   `'afif' => ['name_ar' => 'عفيف', 'name_en' => 'Afif', 'latitude' => 23.91, 'longitude' => 42.92],`
 
-إن نسيت الخطوة الثانية، ترمي الحزمة خطأً واضحًا يذكر المدينة الناقصة.
-ولإضافة دولة، أضف حالتها في `src/Country.php` (الاسم والتوقيت) ثم مفتاحها في الـ config.
+If you forget step 2, the package throws a clear error naming the missing city.
+To add a country, add its case to `src/Country.php` (name and timezone), then its key in the config.
 
-## المدن المدمجة
+### Built-in cities
 
-مكة، جدة، الطائف، رابغ، القنفذة، المدينة، ينبع، العلا، الرياض، الخرج، المجمعة، الزلفي، الدوادمي، وادي الدواسر، الدمام، الخبر، الظهران، القطيف، الجبيل، الهفوف (الأحساء)، حفر الباطن، الخفجي، بريدة، عنيزة، الرس، حائل، تبوك، الوجه، أبها، خميس مشيط، بيشة، الباحة، جازان، صبيا، نجران، شرورة، عرعر، طريف، سكاكا، القريات.
+Makkah, Jeddah, Taif, Rabigh, Al Qunfudhah, Madinah, Yanbu, AlUla, Riyadh, Al Kharj, Al Majmaah, Az Zulfi, Ad Dawadmi, Wadi Al Dawasir, Dammam, Al Khobar, Dhahran, Qatif, Jubail, Al Hofuf (Al-Ahsa), Hafar Al-Batin, Khafji, Buraydah, Unaizah, Ar Rass, Hail, Tabuk, Al Wajh, Abha, Khamis Mushait, Bisha, Al Baha, Jazan, Sabya, Najran, Sharurah, Arar, Turaif, Sakaka, Al Qurayyat.
 
-## الاختبارات
+## Accuracy
+
+The package was compared with the official tables for nine cities across the country (Riyadh, Jeddah, Makkah, Madinah, Dammam, Tabuk, Jazan, Arar, Hail): 3,285 days and 19,710 times.
+
+| | Result |
+|---|---|
+| Identical to the minute | **97.9%** (Fajr 98.2%, Sunrise 96.4%, Dhuhr 98.5%, Asr 98.0%, Maghrib and Isha 98.1%) |
+| Largest difference | One minute |
+| Hijri dates | **3,285 of 3,285** |
+
+The remaining differences are mostly times that fall within a few seconds of a minute boundary, where tiny numerical differences decide the rounding.
+
+**About the official data:** about once per Hijri month (around the 3rd or 4th day, 12 dates in 2026), the official site repeats the previous day's times unchanged, in every city and in every view (yearly, monthly and Hijri). The package computes those days normally instead of repeating the previous day, so it can differ from the site by one or two minutes on those dates (and sometimes the day after). Those dates are excluded from the figures above.
+
+## Testing
 
 ```bash
 composer install && composer test
 ```
 
-تقارن الاختبارات الحزمة بالجداول السنوية الرسمية لتقويم أم القرى لعام 2026 في تسع مدن، محفوظة في `tests/fixtures/official`.
+The tests compare the package with the official 2026 Umm al-Qura tables for nine cities, stored in `tests/fixtures/official`. CI runs them on PHP 8.1 to 8.4, without Laravel and with Laravel 10, 11, 12 and 13.
 
-## الدقة
-
-قورنت الحزمة بالجداول الرسمية في تسع مدن موزعة على المملكة: الرياض، جدة، مكة، المدينة، الدمام، تبوك، جازان، عرعر، حائل. المجموع 3,285 يومًا و19,710 وقتًا:
-
-| | النتيجة |
-|---|---|
-| تطابق حتى الدقيقة | **97.9%** (الفجر 98.2%، الشروق 96.4%، الظهر 98.5%، العصر 98.0%، المغرب والعشاء 98.1%) |
-| أقصى فرق | دقيقة واحدة |
-| التواريخ الهجرية | **3,285 من 3,285** |
-
-الفروقات المتبقية تقع غالبًا في أوقات تبعد ثوانيَ قليلة عن حدّ الدقيقة، حيث تحسم فروقٌ حسابية دقيقة جدًا اتجاه التقريب.
-
-**ملاحظة عن بيانات الموقع الرسمي:** مرة في كل شهر هجري تقريبًا (حول اليوم الثالث أو الرابع، 12 تاريخًا في 2026)، يكرّر الموقع الرسمي أوقات اليوم السابق كما هي في جميع المدن، وفي كل طرق العرض (السنوي والشهري والهجري). تحسب الحزمة هذه الأيام حسابًا فلكيًا عاديًا ولا تكرّر اليوم السابق، لذلك قد تختلف عن الموقع في تلك الأيام (وأحيانًا في اليوم التالي لها) بدقيقة أو دقيقتين. هذه التواريخ مستثناة من الأرقام أعلاه.
-
-## الترخيص
+## License
 
 MIT
