@@ -1,0 +1,174 @@
+# أوقات الصلاة بتقويم أم القرى — PHP
+
+[![Tests](https://github.com/sultan-algarbi/umm-alqura-prayer-times/actions/workflows/tests.yml/badge.svg)](https://github.com/sultan-algarbi/umm-alqura-prayer-times/actions/workflows/tests.yml)
+
+حزمة PHP تحسب أوقات الأذان بطريقة **أم القرى** الرسمية، وتعمل **دون إنترنت** بالكامل.
+المدن معرّفة في `enum` إلزامي (الدولة + المدينة)، وإحداثيات مراكزها في ملف config قابل للتعديل.
+
+## طريقة الحساب
+
+| الوقت | القاعدة |
+|---|---|
+| الفجر | الشمس تحت الأفق بزاوية 18.5° |
+| الشروق | ظهور حافة الشمس العليا (مع الانكسار الجوي) |
+| الظهر | زوال الشمس |
+| العصر | ظل الشيء مثله + ظل الزوال (الجمهور) |
+| المغرب | غروب الشمس |
+| العشاء | بعد المغرب بـ 90 دقيقة، و **120 دقيقة في رمضان تلقائيًا** |
+
+- المعادلات الفلكية من كتاب Jean Meeus *Astronomical Algorithms*، وهي نفس خوارزميات مكتبة Adhan (adhan-java / adhan-js).
+- رمضان يُحدَّد تلقائيًا من تقويم أم القرى الهجري.
+- الأوقات مقرّبة لأقرب دقيقة، وبتوقيت دولة المدينة.
+- لا توجد إزاحات يدوية: الناتج هو وقت الأذان حسب مركز المدينة.
+
+## المتطلبات
+
+PHP 8.1 أو أحدث، مع امتدادي `intl` و `mbstring`.
+
+## التثبيت
+
+```bash
+composer require ihsan/umm-alqura-prayer-times
+```
+
+أو انسخ المجلد إلى مشروعك وأضف في `composer.json`:
+
+```json
+"repositories": [{ "type": "path", "url": "./packages/umm-alqura-prayer-times" }]
+```
+
+## المدن: الدولة + المدينة
+
+كل مدينة حالة في `City` enum، اسمها `{كود الدولة}_{المدينة}` وقيمتها `{الدولة}.{المدينة}`:
+
+```php
+use Ihsan\UmmAlQuraPrayerTimes\City;
+use Ihsan\UmmAlQuraPrayerTimes\Country;
+
+City::SA_Riyadh->value;          // 'sa.riyadh'  ← ثابتة، آمنة للتخزين في قاعدة البيانات
+City::SA_Riyadh->country();      // Country::SA
+City::SA_Riyadh->nameAr();       // 'الرياض'
+City::SA_Riyadh->fullNameAr();   // 'السعودية - الرياض'
+City::SA_Riyadh->fullNameEn();   // 'Saudi Arabia - Riyadh'
+
+// من قيمة قادمة من نموذج أو طلب HTTP
+City::from($request->city);      // يرمي خطأ إن لم تكن مدينة معرّفة
+City::tryFrom($request->city);   // يعيد null
+
+// لقوائم الاختيار
+City::options();                       // ['sa.riyadh' => 'السعودية - الرياض', ...]
+City::options('ar', withCountry: false); // ['sa.riyadh' => 'الرياض', ...]
+City::options('en', country: Country::SA);
+Country::SA->cities();                 // كل مدن السعودية
+```
+
+## استخراج الأوقات حسب التاريخ
+
+```php
+use Ihsan\UmmAlQuraPrayerTimes\PrayerTimes;
+
+// يوم ميلادي محدد (أو null لليوم الحالي بتوقيت المدينة)
+$t = PrayerTimes::on(City::SA_Riyadh, '2026-11-05');
+$t = prayer_times(City::SA_Riyadh, '2026-11-05');   // دالة مختصرة
+
+$t->fajr->format('H:i');   // DateTimeImmutable بتوقيت المدينة
+$t->toArray();
+// ['fajr' => '04:43', 'sunrise' => '06:03', 'dhuhr' => '11:37',
+//  'asr' => '14:47', 'maghrib' => '17:11', 'isha' => '18:41']
+$t->hijri;       // ['year' => 1448, 'month' => 5, 'day' => 25]
+$t->isRamadan;   // false
+
+// يوم هجري
+$t = PrayerTimes::onHijri(City::SA_Makkah, 1448, 9, 1);
+
+// نطاق تواريخ (مصفوفة مفاتيحها Y-m-d)
+PrayerTimes::between(City::SA_Jeddah, '2026-12-01', '2026-12-31');
+
+// شهر ميلادي كامل
+PrayerTimes::month(City::SA_Madinah, 2026, 12);
+
+// شهر هجري كامل — مثلًا إمساكية رمضان
+foreach (PrayerTimes::hijriMonth(City::SA_Riyadh, 1448, 9) as $date => $day) {
+    echo "{$day->hijri['day']} رمضان ($date): " . implode(' ', $day->toArray()) . PHP_EOL;
+}
+
+// الأذان القادم (ينتقل لفجر الغد بعد العشاء)
+['prayer' => $p, 'time' => $time] = PrayerTimes::nextAdhan(City::SA_Makkah);
+echo $p->arabicName() . ' ' . $time->format('H:i');
+
+// الصلاة الحالية والقادمة ضمن يوم
+$t->currentPrayer();   // Prayer|null
+$t->nextPrayer();      // Prayer|null
+```
+
+التاريخ النصي يجب أن يكون `Y-m-d` وتاريخًا صحيحًا، وإلا يُرمى `InvalidArgumentException`.
+وإن مرّرت كائن تاريخ بمنطقة زمنية أخرى، يؤخذ اليوم كما هو في توقيت المدينة.
+
+## ملف الإعدادات `config/cities.php`
+
+مستويان فقط: **الدولة ← المدن**.
+
+```php
+return [
+    'SA' => [
+        'riyadh' => ['name_ar' => 'الرياض', 'name_en' => 'Riyadh', 'latitude' => 24.7136, 'longitude' => 46.6753],
+        'jeddah' => ['name_ar' => 'جدة',    'name_en' => 'Jeddah', 'latitude' => 21.4858, 'longitude' => 39.1925],
+        // ...
+    ],
+];
+```
+
+اسم الدولة وتوقيتها معرّفان في `Country` enum.
+
+### تعديل مركز مدينة دون لمس ملف الحزمة
+
+أنشئ ملفًا في مشروعك يحتوي **ما تريد تعديله فقط**، ثم حمّله مرة واحدة عند بدء التطبيق:
+
+```php
+// config/prayer-cities.php
+return [
+    'SA' => [
+        'riyadh' => ['latitude' => 24.6877, 'longitude' => 46.7219],
+    ],
+];
+```
+
+```php
+use Ihsan\UmmAlQuraPrayerTimes\CityConfig;
+
+CityConfig::load(__DIR__ . '/config/prayer-cities.php');
+// أو مباشرة من مصفوفة:
+CityConfig::set(['SA' => ['riyadh' => ['latitude' => 24.6877, 'longitude' => 46.7219]]]);
+```
+
+يُدمج ملفك فوق الإعدادات الافتراضية، فالحقول والمدن التي لا تذكرها تبقى كما هي.
+ويُرفض أي مفتاح غير معروف، أو مدينة غير موجودة في الـ enum، أو إحداثيات خارج النطاق.
+
+### إضافة مدينة
+
+1. أضف حالة في `src/City.php`، مثل: `case SA_Afif = 'sa.afif';`
+2. أضف بياناتها في `config/cities.php` تحت `'SA'`:
+   `'afif' => ['name_ar' => 'عفيف', 'name_en' => 'Afif', 'latitude' => 23.9065, 'longitude' => 42.9172],`
+
+إن نسيت الخطوة الثانية، ترمي الحزمة خطأً واضحًا يذكر المدينة الناقصة.
+ولإضافة دولة، أضف حالتها في `src/Country.php` (الاسم والتوقيت) ثم مفتاحها في الـ config.
+
+## المدن المدمجة
+
+مكة، جدة، الطائف، رابغ، القنفذة، المدينة، ينبع، العلا، الرياض، الخرج، المجمعة، الزلفي، الدوادمي، وادي الدواسر، الدمام، الخبر، الظهران، القطيف، الجبيل، الأحساء، حفر الباطن، الخفجي، بريدة، عنيزة، الرس، حائل، تبوك، الوجه، أبها، خميس مشيط، بيشة، الباحة، جازان، صبيا، نجران، شرورة، عرعر، طريف، سكاكا، القريات.
+
+## الاختبارات
+
+```bash
+composer install && composer test
+```
+
+تتحقق الاختبارات من أكثر من 38 ألف وقت مقابل مخرجات مكتبة Adhan المرجعية. وأثناء التطوير قورنت الحزمة بـ **525,840 وقتًا** (40 مدينة × كل أيام 2025–2030) بتطابق كامل حتى الدقيقة.
+
+## ملاحظة عن الدقة
+
+الحساب مطابق تمامًا لمكتبة Adhan المستخدمة في تطبيقات الأذان. قد يظهر فرق دقيقة واحدة أحيانًا مقارنة بالتقويم المطبوع لأم القرى، بسبب اختلاف إحداثيات مركز المدينة المعتمدة. لمطابقة جهة معيّنة، اضبط إحداثياتها في ملف الإعدادات.
+
+## الترخيص
+
+MIT
