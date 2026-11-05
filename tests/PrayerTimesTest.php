@@ -17,27 +17,95 @@ use Ihsan\UmmAlQuraPrayerTimes\PrayerTimes;
 
 final class PrayerTimesTest extends TestCase
 {
+    /** Official fixture file => city. */
+    private const OFFICIAL = [
+        'riyadh' => City::SA_Riyadh,
+        'jeddah' => City::SA_Jeddah,
+        'mecca' => City::SA_Makkah,
+        'medina' => City::SA_Madinah,
+        'dammam' => City::SA_Dammam,
+        'tabuk' => City::SA_Tabuk,
+        'jazan' => City::SA_Jazan,
+        'arar' => City::SA_Arar,
+        'hail' => City::SA_Hail,
+    ];
+
+    /** Dates on which the official 2026 tables repeat the previous day's row (see fixtures/official/README.md). */
+    private const REPEATED_DATES = [
+        '2026-01-23', '2026-02-21', '2026-03-23', '2026-04-21', '2026-05-20', '2026-06-19',
+        '2026-07-18', '2026-08-17', '2026-09-15', '2026-10-15', '2026-11-13', '2026-12-12',
+    ];
+
+    private const KEYS = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
+
     protected function tearDown(): void
     {
         CityConfig::reset();
     }
 
-    /**
-     * Reference values generated with the Adhan library (adhan-js 4.4.6,
-     * CalculationMethod.UmmAlQura, Shafi, +30 min Isha in Umm al-Qura Ramadan).
-     * Rows: [city key (SA), date, fajr, sunrise, dhuhr, asr, maghrib, isha].
-     */
-    public function testMatchesReferenceImplementation(): void
+    /** @return iterable<array{City, list<string>}> each official row with its city */
+    private static function officialRows(): iterable
     {
-        $rows = json_decode((string) file_get_contents(__DIR__ . '/fixtures/adhan-reference.json'), true);
-        $keys = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
-
-        foreach ($rows as $row) {
-            $times = PrayerTimes::on(City::from('sa.' . $row[0]), $row[1])->toArray();
-            foreach ($keys as $i => $key) {
-                self::assertSame($row[$i + 2], $times[$key], "{$row[0]} {$row[1]} {$key}");
+        foreach (self::OFFICIAL as $file => $city) {
+            foreach (file(__DIR__ . "/fixtures/official/{$file}-2026.txt", FILE_IGNORE_NEW_LINES) as $line) {
+                yield [$city, explode('|', $line)];
             }
         }
+    }
+
+    private static function minutes(string $hhmm): int
+    {
+        return (int) substr($hhmm, 0, 2) * 60 + (int) substr($hhmm, 3, 2);
+    }
+
+    /**
+     * 9 cities × 365 days of the official Umm al-Qura calendar:
+     * at least 97.5% of times identical to the minute, and never more than one minute apart
+     * outside the source's repeated dates (and the day after them).
+     */
+    public function testMatchesOfficialCalendar(): void
+    {
+        $exact = 0;
+        $total = 0;
+        $farOff = [];
+
+        foreach (self::officialRows() as [$city, $row]) {
+            $date = $row[0];
+            $times = PrayerTimes::on($city, $date)->toArray();
+            $repeated = in_array($date, self::REPEATED_DATES, true);
+            $dayAfter = in_array((new DateTimeImmutable($date))->modify('-1 day')->format('Y-m-d'), self::REPEATED_DATES, true);
+
+            foreach (self::KEYS as $i => $key) {
+                $official = $row[$i + 2];
+                if (!$repeated) {
+                    $total++;
+                    $exact += (int) ($times[$key] === $official);
+                }
+                if (!$repeated && !$dayAfter && abs(self::minutes($times[$key]) - self::minutes($official)) > 1) {
+                    $farOff[] = "{$city->value} {$date} {$key}: official {$official}, package {$times[$key]}";
+                }
+            }
+        }
+
+        self::assertSame([], $farOff, 'Times more than one minute from the official calendar');
+        self::assertGreaterThanOrEqual(0.975, $exact / $total, sprintf('Exact match rate %.2f%%', 100 * $exact / $total));
+    }
+
+    public function testHijriDatesMatchOfficialCalendar(): void
+    {
+        foreach (self::officialRows() as [$city, $row]) {
+            $h = PrayerTimes::on($city, $row[0])->hijri;
+            self::assertSame($row[1], "{$h['year']}-{$h['month']}-{$h['day']}", "{$city->value} {$row[0]}");
+        }
+    }
+
+    /** Spot check: the official site's times for Riyadh on 5 November 2026 (25 Jumada I 1448). */
+    public function testOfficialRiyadhToday(): void
+    {
+        self::assertSame(
+            ['fajr' => '04:44', 'sunrise' => '06:02', 'dhuhr' => '11:37', 'asr' => '14:48', 'maghrib' => '17:11', 'isha' => '18:41'],
+            PrayerTimes::on(City::SA_Riyadh, '2026-11-05')->toArray(),
+        );
     }
 
     public function testEveryCityIsConfigured(): void

@@ -7,7 +7,6 @@ namespace Ihsan\UmmAlQuraPrayerTimes;
 use DateTimeImmutable;
 use DateTimeInterface;
 use DateTimeZone;
-use IntlCalendar;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -22,11 +21,13 @@ use RuntimeException;
  *  - Isha:    90 minutes after Maghrib, 120 minutes during Ramadan
  *             (Ramadan detected with the Umm al-Qura Hijri calendar)
  *
- * All times are rounded to the nearest minute, in the city's country timezone.
+ * Calibrated against the official calendar (see UmmAlQuraMethod). As in the official
+ * tables, prayer times are rounded up to the minute and sunrise is rounded down,
+ * in the city's country timezone.
  */
 final class PrayerTimes
 {
-    public const FAJR_ANGLE = 18.5;
+    public const FAJR_ANGLE = UmmAlQuraMethod::FAJR_ANGLE;
     public const ISHA_INTERVAL = 90;
     public const ISHA_INTERVAL_RAMADAN = 120;
 
@@ -57,39 +58,27 @@ final class PrayerTimes
         $this->hijri = Hijri::fromGregorian($y, $m, $d);
         $this->isRamadan = $this->hijri['month'] === 9;
 
-        $lat = $city->latitude();
-        $lng = $city->longitude();
-        $solar = new SolarTime($y, $m, $d, $lat, $lng);
-        $base = (float) gmmktime(0, 0, 0, $m, $d, $y);
+        $raw = UmmAlQuraMethod::compute(
+            $y,
+            $m,
+            $d,
+            $city->latitude(),
+            $city->longitude(),
+            $this->isRamadan ? self::ISHA_INTERVAL_RAMADAN : self::ISHA_INTERVAL,
+        );
 
-        $dhuhr = self::componentsToTimestamp($solar->transit, $base);
-        $sunrise = self::componentsToTimestamp($solar->sunrise, $base);
-        $sunset = self::componentsToTimestamp($solar->sunset, $base);
-        $asr = self::componentsToTimestamp($solar->afternoon(1.0), $base);
-        $fajr = self::componentsToTimestamp($solar->hourAngle(-self::FAJR_ANGLE, false), $base);
-
-        if (is_nan($sunrise) || is_nan($sunset)) {
-            throw new RuntimeException('The sun does not rise or set at this location on this date.');
+        foreach ($raw as $time) {
+            if (is_nan($time)) {
+                throw new RuntimeException('The sun does not reach the required angle at this location on this date.');
+            }
         }
 
-        // Fajr safety limit (middle of the night) — no effect at Saudi latitudes,
-        // kept for parity with the reference implementation.
-        [$ty, $tm, $td] = array_map('intval', explode('-', $this->date->modify('+1 day')->format('Y-n-j')));
-        $tomorrowSolar = new SolarTime($ty, $tm, $td, $lat, $lng);
-        $tomorrowSunrise = self::componentsToTimestamp($tomorrowSolar->sunrise, (float) gmmktime(0, 0, 0, $tm, $td, $ty));
-        $safeFajr = $sunrise - ($tomorrowSunrise - $sunset) / 2;
-        if (is_nan($fajr) || $safeFajr > $fajr) {
-            $fajr = $safeFajr;
-        }
-
-        $isha = $sunset + ($this->isRamadan ? self::ISHA_INTERVAL_RAMADAN : self::ISHA_INTERVAL) * 60;
-
-        $this->fajr = self::toDate($fajr, $tz);
-        $this->sunrise = self::toDate($sunrise, $tz);
-        $this->dhuhr = self::toDate($dhuhr, $tz);
-        $this->asr = self::toDate($asr, $tz);
-        $this->maghrib = self::toDate($sunset, $tz);
-        $this->isha = self::toDate($isha, $tz);
+        $this->fajr = self::roundUp($raw['fajr'], $tz);
+        $this->sunrise = self::roundDown($raw['sunrise'], $tz);
+        $this->dhuhr = self::roundUp($raw['dhuhr'], $tz);
+        $this->asr = self::roundUp($raw['asr'], $tz);
+        $this->maghrib = self::roundUp($raw['maghrib'], $tz);
+        $this->isha = self::roundUp($raw['isha'], $tz);
     }
 
     // ── Lookups by date ──────────────────────────────────────────────────
@@ -256,26 +245,15 @@ final class PrayerTimes
         return DateTimeImmutable::createFromInterface($date)->setTimezone($tz)->setTime(0, 0);
     }
 
-    /** UT decimal hours → UNIX timestamp, truncated to whole seconds (as in Adhan). */
-    private static function componentsToTimestamp(float $hours, float $midnightUtc): float
+    /** Next whole minute, so an adhan is never announced before its time. */
+    private static function roundUp(float $timestamp, DateTimeZone $tz): DateTimeImmutable
     {
-        if (is_nan($hours)) {
-            return NAN;
-        }
-        $h = floor($hours);
-        $m = floor(($hours - $h) * 60);
-        $s = floor(($hours - ($h + $m / 60)) * 3600);
-
-        return $midnightUtc + $h * 3600 + $m * 60 + $s;
+        return (new DateTimeImmutable('@' . (int) (ceil($timestamp / 60) * 60)))->setTimezone($tz);
     }
 
-    /** Round to the nearest minute (≥30 s rounds up). */
-    private static function toDate(float $timestamp, DateTimeZone $tz): DateTimeImmutable
+    /** Previous whole minute, so sunrise (the end of Fajr) is never shown late. */
+    private static function roundDown(float $timestamp, DateTimeZone $tz): DateTimeImmutable
     {
-        $whole = (int) floor($timestamp);
-        $seconds = (($whole % 60) + 60) % 60;
-        $rounded = $whole + ($seconds >= 30 ? 60 - $seconds : -$seconds);
-
-        return (new DateTimeImmutable('@' . $rounded))->setTimezone($tz);
+        return (new DateTimeImmutable('@' . (int) (floor($timestamp / 60) * 60)))->setTimezone($tz);
     }
 }

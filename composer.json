@@ -1,6 +1,6 @@
 {
     "name": "ihsan/umm-alqura-prayer-times",
-    "description": "Offline PHP library for Islamic prayer (adhan) times using the official Umm al-Qura method, with automatic Ramadan Isha and built-in Saudi cities.",
+    "description": "Offline PHP library for Islamic prayer (adhan) times using the official Umm al-Qura method, calibrated against the official calendar, with automatic Ramadan Isha and built-in Saudi cities.",
     "type": "library",
     "license": "MIT",
     "keywords": ["prayer-times", "adhan", "umm-al-qura", "islamic", "muslim", "salah", "hijri", "saudi-arabia", "offline"],
